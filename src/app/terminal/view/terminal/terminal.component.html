@@ -1,0 +1,12 @@
+<div
+  class="w-screen h-screen overflow-hidden flex flex-col gap-2 justify-center items-center p-4"
+  [style.background-color]="background"
+  [style.text-color]="foreground"
+>
+  <div class="w-full flex-grow">
+    <ng-terminal #term [minWidth]="200" [minHeight]="200" class="ng-terminal">
+    </ng-terminal>
+  </div>
+  <app-player-info class="w-full"></app-player-info>
+  <app-input class="w-full"></app-input>
+</div>

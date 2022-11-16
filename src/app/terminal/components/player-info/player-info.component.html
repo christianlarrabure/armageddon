@@ -1,0 +1,42 @@
+<div class="text-white flex gap-4 w-full" *ngIf="settings !== undefined">
+  <app-stat-bar
+    *ngIf="settings.hp.show"
+    [value]="(prompt$ | async)?.hp"
+    [maxValue]="(prompt$ | async)?.max_hp"
+    [settings]="settings.hp"
+    label="hp"
+    class="w-full"
+  ></app-stat-bar>
+  <app-stat-bar
+    *ngIf="settings.mana.show"
+    [value]="(prompt$ | async)?.mana"
+    [maxValue]="(prompt$ | async)?.max_mana"
+    [settings]="settings.mana"
+    label="mana"
+    class="w-full"
+  ></app-stat-bar>
+  <app-stat-bar
+    *ngIf="settings.stamina.show"
+    [value]="(prompt$ | async)?.stamina"
+    [maxValue]="(prompt$ | async)?.max_stamina"
+    [settings]="settings.stamina"
+    label="stamina"
+    class="w-full"
+  ></app-stat-bar>
+  <app-stat-bar
+    *ngIf="settings.stun.show"
+    [value]="(prompt$ | async)?.stun"
+    [maxValue]="(prompt$ | async)?.max_stun"
+    [settings]="settings.stun"
+    label="stun"
+    class="w-full"
+  ></app-stat-bar>
+  <app-stat-bar
+    *ngIf="settings.focus.show"
+    [value]="(prompt$ | async)?.focus"
+    [maxValue]="(prompt$ | async)?.max_focus"
+    [settings]="settings.focus"
+    label="focus"
+    class="w-full"
+  ></app-stat-bar>
+</div>
