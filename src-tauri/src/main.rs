@@ -3,10 +3,13 @@
     windows_subsystem = "windows"
 )]
 
-use tokio::{
-    net::{tcp::OwnedWriteHalf, TcpSocket},
-    sync::Mutex,
-};
+use std::sync::Arc;
+
+use tauri::Manager;
+use tokio::sync::Mutex;
+
+use telnet::server::ArmageddonServer;
+
 mod commands;
 mod config;
 mod settings;
@@ -14,20 +17,24 @@ mod telnet;
 
 pub struct ArmageddonState {
     pub ip: String,
-    pub sink: Option<OwnedWriteHalf>,
     pub logging: bool,
-    pub socket: Option<TcpSocket>,
+    pub server: Arc<Mutex<Option<ArmageddonServer>>>,
 }
 
 #[tokio::main]
 async fn main() {
+    let data = ArmageddonState {
+        ip: String::from("ginka.armageddon.org:4050"),
+        logging: true,
+        server: Arc::new(Mutex::new(None)),
+    };
+    let data = Mutex::new(data);
     tauri::Builder::default()
-        .manage(Mutex::new(ArmageddonState {
-            ip: String::from("ginka.armageddon.org:4050"),
-            sink: None,
-            logging: true,
-            socket: None,
-        }))
+        .setup(|app| {
+            app.manage(data);
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             telnet::connect,
             telnet::send,
@@ -35,7 +42,6 @@ async fn main() {
             settings::get_config,
             commands::prompt::set_prompt,
             commands::help::pcommand_help,
-            commands::whois::pcommand_whois
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

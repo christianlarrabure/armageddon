@@ -3,7 +3,6 @@ use tauri::Window;
 
 pub mod help;
 pub mod prompt;
-pub mod whois;
 
 pub fn tell_player(input: String, window: Window) {
     let tagline = String::from(format!("{}", Green.paint("[CLIENT] ")));

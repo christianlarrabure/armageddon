@@ -44,4 +44,21 @@ export class InputComponent implements OnInit {
     this.position = this.position + steps;
     this.input = this.inputHistory[this.position];
   }
+
+  autocomplete(event: Event) {
+    event.preventDefault();
+    if (this.input.length === 0) {
+      return;
+    }
+
+    const bestCandidate = this.inputHistory.filter((value: String) => {
+      return value.includes(this.input, 0);
+    });
+
+    if (bestCandidate.length === 0) {
+      return;
+    }
+
+    this.input = bestCandidate[bestCandidate.length - 1];
+  }
 }
