@@ -1,0 +1,8 @@
+-- Your SQL goes here
+CREATE TABLE topics (
+  id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  title VARCHAR NOT NULL,
+  sdesc VARCHAR NULL,
+  notes TEXT NULL
+
+)

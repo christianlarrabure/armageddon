@@ -1,5 +1,4 @@
 use crate::config::prompt::PROMPT;
-use crate::telnet::send_to_sink;
 use crate::ArmageddonState;
 use tauri::Window;
 use tokio::sync::Mutex;
@@ -9,12 +8,16 @@ pub async fn set_prompt(
     _state: tauri::State<'_, Mutex<ArmageddonState>>,
     window: Window,
 ) -> Result<(), String> {
-    let mut state = _state.lock().await;
+    let state = _state.lock().await;
+    let mut server = state.server.lock().await;
 
-    if let Some(sink) = state.sink.as_mut() {
+    if server.is_none() {
+        super::tell_player("You are not connected to the game.".to_string(), window);
+    } else {
+        let server = server.as_mut().unwrap();
         let input = String::from(format!("prompt {}", PROMPT));
-        let input = input.as_str();
-        send_to_sink(sink, &[input.as_bytes(), b"\r\n"].concat()[..]).await;
+        let sink = &server.sink.clone();
+        sink.send(input).unwrap();
         super::tell_player("You have set your prompt.".to_string(), window)
     }
 
