@@ -1,7 +1,8 @@
 use crate::telnet::prompt;
+use async_channel;
 use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::Window;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -27,17 +28,17 @@ pub struct ArmageddonServerInternalPayload {
 
 #[derive(Debug, Clone)]
 pub struct ArmageddonServer {
-    pub channel: Sender<ArmageddonServerInternalPayload>,
-    pub sink: broadcast::Sender<String>,
+    pub channel: Option<async_channel::Sender<ArmageddonServerInternalPayload>>,
+    pub sink: Option<broadcast::Sender<String>>,
 }
 
 impl ArmageddonServer {
     pub async fn new(window: Window) -> Self {
-        let (tx, rx) = mpsc::channel::<ArmageddonServerInternalPayload>(10);
+        let (tx, rx) = async_channel::unbounded::<ArmageddonServerInternalPayload>();
         let (tx2, _) = broadcast::channel::<String>(10);
         let server = ArmageddonServer {
-            channel: tx,
-            sink: tx2,
+            channel: Some(tx),
+            sink: Some(tx2),
         };
         server.listen_to_output(rx, window).await;
         server
@@ -55,7 +56,8 @@ impl ArmageddonServer {
             .await
             .expect("Failed to connect to telnet server.");
 
-        let tx2 = self.sink.clone();
+        let tx2 = self.sink.clone().unwrap();
+        let tx2 = tx2.clone();
         let mut rx2 = tx2.subscribe();
 
         let (read_half, mut write_half) = stream.into_split();
@@ -63,6 +65,7 @@ impl ArmageddonServer {
         let mut reader = BufReader::new(read_half);
 
         let channel = self.channel.clone();
+        let channel = channel.unwrap();
 
         self.listen_armageddon(reader, channel, window.clone())
             .await;
@@ -72,7 +75,7 @@ impl ArmageddonServer {
     async fn listen_armageddon(
         &self,
         reader: BufReader<OwnedReadHalf>,
-        channel: Sender<ArmageddonServerInternalPayload>,
+        channel: async_channel::Sender<ArmageddonServerInternalPayload>,
         window: Window,
     ) {
         let mut reader = reader;
@@ -106,11 +109,11 @@ impl ArmageddonServer {
 
     async fn listen_to_output(
         &self,
-        mut rx: mpsc::Receiver<ArmageddonServerInternalPayload>,
+        mut rx: async_channel::Receiver<ArmageddonServerInternalPayload>,
         window: Window,
     ) {
         tokio::spawn(async move {
-            while let Some(received) = rx.recv().await {
+            while let Ok(received) = rx.recv().await {
                 let window = window.clone();
                 if received.message.is_some() {
                     let msg = received.message.unwrap();

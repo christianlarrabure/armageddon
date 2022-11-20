@@ -35,6 +35,7 @@ pub async fn send(
     } else {
         let server = server.unwrap();
         let sink = server.sink.clone();
+        let sink = sink.unwrap();
 
         let input = aliases::transform_with_aliases(input);
         sink.send(input)

@@ -16,7 +16,7 @@ pub async fn set_prompt(
     } else {
         let server = server.as_mut().unwrap();
         let input = String::from(format!("prompt {}", PROMPT));
-        let sink = &server.sink.clone();
+        let sink = &server.sink.clone().unwrap();
         sink.send(input).unwrap();
         super::tell_player("You have set your prompt.".to_string(), window)
     }
