@@ -1,5 +1,4 @@
 use crate::telnet::prompt;
-use async_channel;
 use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -28,19 +27,13 @@ pub struct ArmageddonServerInternalPayload {
 
 #[derive(Debug, Clone)]
 pub struct ArmageddonServer {
-    pub channel: Option<async_channel::Sender<ArmageddonServerInternalPayload>>,
     pub sink: Option<broadcast::Sender<String>>,
 }
 
 impl ArmageddonServer {
     pub async fn new(window: Window) -> Self {
-        let (tx, rx) = async_channel::unbounded::<ArmageddonServerInternalPayload>();
-        let (tx2, _) = broadcast::channel::<String>(10);
-        let server = ArmageddonServer {
-            channel: Some(tx),
-            sink: Some(tx2),
-        };
-        server.listen_to_output(rx, window).await;
+        let (tx2, _) = broadcast::channel::<String>(1);
+        let server = ArmageddonServer { sink: Some(tx2) };
         server
     }
 
@@ -64,71 +57,26 @@ impl ArmageddonServer {
 
         let mut reader = BufReader::new(read_half);
 
-        let channel = self.channel.clone();
-        let channel = channel.unwrap();
-
-        self.listen_armageddon(reader, channel, window.clone())
-            .await;
         self.listen_to_input(rx2, write_half).await;
+        self.listen_armageddon(reader, window.clone()).await;
     }
 
-    async fn listen_armageddon(
-        &self,
-        reader: BufReader<OwnedReadHalf>,
-        channel: async_channel::Sender<ArmageddonServerInternalPayload>,
-        window: Window,
-    ) {
+    async fn listen_armageddon(&self, reader: BufReader<OwnedReadHalf>, window: Window) {
         let mut reader = reader;
         let window = window;
-        let channel = channel;
         tokio::spawn(async move {
             while let Ok(received) = reader.fill_buf().await {
                 let received = &received.to_vec();
                 let received = String::from_utf8_lossy(received);
                 reader.consume(received.len());
                 if received.len() == 0 {
-                    let payload = ArmageddonServerInternalPayload {
-                        status: Some(DISCONNECTED),
-                        message: None,
-                    };
-                    channel.send(payload).await;
                     break;
                 }
                 let window = window.clone();
                 let received = String::from_utf8_lossy(received.as_bytes());
                 let received = prompt::is_prompt(received, &window);
                 let received = received;
-                let payload = ArmageddonServerInternalPayload {
-                    status: Some(CONNECTED),
-                    message: Some(received),
-                };
-                channel.send(payload).await;
-            }
-        });
-    }
-
-    async fn listen_to_output(
-        &self,
-        mut rx: async_channel::Receiver<ArmageddonServerInternalPayload>,
-        window: Window,
-    ) {
-        tokio::spawn(async move {
-            while let Ok(received) = rx.recv().await {
-                let window = window.clone();
-                if received.message.is_some() {
-                    let msg = received.message.unwrap();
-                    println!("{}", msg);
-                    window.emit("telnet-message", msg.as_bytes()).unwrap();
-                }
-
-                if received.status.is_some() {
-                    let status: ArmageddonServerStatus = received.status.unwrap();
-                    if status == CONNECTED {
-                        window.emit("armageddon-connection", true).unwrap();
-                    } else {
-                        window.emit("armageddon-connection", false).unwrap();
-                    }
-                }
+                window.emit("telnet-message", received.as_bytes()).unwrap();
             }
         });
     }
