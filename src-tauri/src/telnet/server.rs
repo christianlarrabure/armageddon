@@ -1,12 +1,14 @@
 use crate::telnet::prompt;
 use socket2::{Domain, Protocol, Socket, TcpKeepalive, Type};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tauri::Window;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpSocket;
 use tokio::sync::broadcast;
-use tokio::sync::broadcast::Sender;
+use tokio::sync::broadcast::{Receiver, Sender};
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ArmageddonServerStatus {
@@ -56,69 +58,88 @@ impl ArmageddonServer {
         let tx2 = self.sink.clone();
         let mut rx2 = tx2.subscribe();
 
+        let (read_half, mut write_half) = stream.into_split();
+
+        let mut reader = BufReader::new(read_half);
+
+        self.listen_armageddon(reader, channel, window.clone())
+            .await;
+        self.listen_to_output(rx, window.clone()).await;
+        self.listen_to_input(rx2, write_half).await;
+    }
+
+    async fn listen_armageddon(
+        &self,
+        reader: BufReader<OwnedReadHalf>,
+        channel: Sender<ArmageddonServerInternalPayload>,
+        window: Window,
+    ) {
+        let mut reader = reader;
+        let window = window;
+        let channel = channel;
         tokio::spawn(async move {
-            let (read_half, mut write_half) = stream.into_split();
-
-            let mut reader = BufReader::new(read_half);
-            let window = window.clone();
-
-            loop {
-                tokio::select! {
-                  result = reader.fill_buf() => {
-                    let received: &[u8] = result.unwrap();
-                    let received = &received.to_vec();
-
-                    if received.len() > 0 {
-                      let window = window.clone();
-                      reader.consume(received.len());
-                      let received = String::from_utf8_lossy(&received);
-                      let received = prompt::is_prompt(received, &window);
-                      let received = received;
-                      let payload = ArmageddonServerInternalPayload {
-                        status: Some(CONNECTED),
-                        message: Some(received)
-                      };
-                      channel.send(payload).unwrap();
-                    }else{
-                      let payload = ArmageddonServerInternalPayload {
+            while let Ok(received) = reader.fill_buf().await {
+                let received = &received.to_vec();
+                let received = String::from_utf8_lossy(received);
+                reader.consume(received.len());
+                if received.len() == 0 {
+                    let payload = ArmageddonServerInternalPayload {
                         status: Some(DISCONNECTED),
                         message: None,
-                      };
-                      channel.send(payload).unwrap();
-                    }
-                  }
-
-                  result = rx.recv() => {
-                    let received: ArmageddonServerInternalPayload = result.unwrap();
-                    let window: Window = window.clone();
-
-                    if received.message.is_some() {
-                      let msg = received.message.unwrap();
-                      println!("{}", msg);
-                      window.emit("telnet-message", msg.as_bytes()).unwrap();
-                    }
-
-                    if received.status.is_some() {
-                      let status: ArmageddonServerStatus = received.status.unwrap();
-                      if status == CONNECTED {
-                        window.emit("armageddon-connection", true).unwrap();
-                      }else{
-                        window.emit("armageddon-connection", false).unwrap();
-                      }
-                    }
-                  }
-
-                  result = rx2.recv() => {
-                    let input: String = result.unwrap();
-                    let input = &[input.as_bytes(), b"\r\n"].concat()[..];
-                    write_half.write_all(input)
-                      .await
-                      .map_err(|error|  {
-                        println!("ERROR: {}", error);
-                      })
-                      .unwrap();
-                  }
+                    };
+                    channel.send(payload).unwrap();
+                    break;
+                }
+                let window = window.clone();
+                let received = String::from_utf8_lossy(received.as_bytes());
+                let received = prompt::is_prompt(received, &window);
+                let received = received;
+                let payload = ArmageddonServerInternalPayload {
+                    status: Some(CONNECTED),
+                    message: Some(received),
                 };
+                channel.send(payload).unwrap();
+            }
+        });
+    }
+
+    async fn listen_to_output(
+        &self,
+        mut rx: Receiver<ArmageddonServerInternalPayload>,
+        window: Window,
+    ) {
+        tokio::spawn(async move {
+            while let Ok(received) = rx.recv().await {
+                let window = window.clone();
+                if received.message.is_some() {
+                    let msg = received.message.unwrap();
+                    println!("{}", msg);
+                    window.emit("telnet-message", msg.as_bytes()).unwrap();
+                }
+
+                if received.status.is_some() {
+                    let status: ArmageddonServerStatus = received.status.unwrap();
+                    if status == CONNECTED {
+                        window.emit("armageddon-connection", true).unwrap();
+                    } else {
+                        window.emit("armageddon-connection", false).unwrap();
+                    }
+                }
+            }
+        });
+    }
+
+    async fn listen_to_input(&self, mut rx: Receiver<String>, mut write_half: OwnedWriteHalf) {
+        tokio::spawn(async move {
+            while let Ok(input) = rx.recv().await {
+                let input = &[input.as_bytes(), b"\r\n"].concat()[..];
+                write_half
+                    .write_all(input)
+                    .await
+                    .map_err(|error| {
+                        println!("ERROR: {}", error);
+                    })
+                    .unwrap();
             }
         });
     }
