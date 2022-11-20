@@ -8,7 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpSocket;
 use tokio::sync::broadcast;
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::{Receiver, Sender};
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ArmageddonServerStatus {
@@ -27,17 +28,18 @@ pub struct ArmageddonServerInternalPayload {
 #[derive(Debug, Clone)]
 pub struct ArmageddonServer {
     pub channel: Sender<ArmageddonServerInternalPayload>,
-    pub sink: Sender<String>,
+    pub sink: broadcast::Sender<String>,
 }
 
 impl ArmageddonServer {
-    pub async fn new() -> Self {
-        let (tx, _) = broadcast::channel::<ArmageddonServerInternalPayload>(10);
+    pub async fn new(window: Window) -> Self {
+        let (tx, rx) = mpsc::channel::<ArmageddonServerInternalPayload>(10);
         let (tx2, _) = broadcast::channel::<String>(10);
         let server = ArmageddonServer {
             channel: tx,
             sink: tx2,
         };
+        server.listen_to_output(rx, window).await;
         server
     }
 
@@ -53,8 +55,6 @@ impl ArmageddonServer {
             .await
             .expect("Failed to connect to telnet server.");
 
-        let channel = self.channel.clone();
-        let mut rx = channel.subscribe();
         let tx2 = self.sink.clone();
         let mut rx2 = tx2.subscribe();
 
@@ -62,9 +62,10 @@ impl ArmageddonServer {
 
         let mut reader = BufReader::new(read_half);
 
+        let channel = self.channel.clone();
+
         self.listen_armageddon(reader, channel, window.clone())
             .await;
-        self.listen_to_output(rx, window.clone()).await;
         self.listen_to_input(rx2, write_half).await;
     }
 
@@ -87,7 +88,7 @@ impl ArmageddonServer {
                         status: Some(DISCONNECTED),
                         message: None,
                     };
-                    channel.send(payload).unwrap();
+                    channel.send(payload).await;
                     break;
                 }
                 let window = window.clone();
@@ -98,18 +99,18 @@ impl ArmageddonServer {
                     status: Some(CONNECTED),
                     message: Some(received),
                 };
-                channel.send(payload).unwrap();
+                channel.send(payload).await;
             }
         });
     }
 
     async fn listen_to_output(
         &self,
-        mut rx: Receiver<ArmageddonServerInternalPayload>,
+        mut rx: mpsc::Receiver<ArmageddonServerInternalPayload>,
         window: Window,
     ) {
         tokio::spawn(async move {
-            while let Ok(received) = rx.recv().await {
+            while let Some(received) = rx.recv().await {
                 let window = window.clone();
                 if received.message.is_some() {
                     let msg = received.message.unwrap();
@@ -129,7 +130,11 @@ impl ArmageddonServer {
         });
     }
 
-    async fn listen_to_input(&self, mut rx: Receiver<String>, mut write_half: OwnedWriteHalf) {
+    async fn listen_to_input(
+        &self,
+        mut rx: broadcast::Receiver<String>,
+        mut write_half: OwnedWriteHalf,
+    ) {
         tokio::spawn(async move {
             while let Ok(input) = rx.recv().await {
                 let input = &[input.as_bytes(), b"\r\n"].concat()[..];

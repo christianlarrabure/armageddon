@@ -13,7 +13,7 @@ pub async fn connect(
     window: Window,
 ) -> Result<(), ()> {
     let window = window.clone();
-    let server = server::ArmageddonServer::new().await;
+    let server = server::ArmageddonServer::new(window.clone()).await;
     let state = _state.lock().await;
     let state_server = state.server.clone();
     let mut state_server = state_server.lock().await;
