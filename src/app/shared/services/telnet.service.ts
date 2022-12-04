@@ -48,7 +48,7 @@ export class TelnetService {
       const inputargs = input.split(' ');
       const verb = inputargs[0].slice(1).toLowerCase();
       const args = inputargs.slice(1);
-      invoke(`pcommand_${verb}`, { args: args.join(' ') });
+      invoke(`hashtag_command`, { verb: verb, args: args.join(' ') });
       return;
     }
     invoke('send', { input: input });

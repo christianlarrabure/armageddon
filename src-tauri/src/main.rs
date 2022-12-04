@@ -5,8 +5,9 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
 use tokio::sync::Mutex;
+
+use tauri::Manager;
 
 use telnet::server::ArmageddonServer;
 
@@ -41,7 +42,7 @@ async fn main() {
             telnet::welcome::init,
             settings::get_config,
             commands::prompt::set_prompt,
-            commands::help::pcommand_help,
+            commands::hashtag_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
