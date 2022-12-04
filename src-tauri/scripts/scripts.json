@@ -1,5 +1,5 @@
 {
-    "help": {
-        "src":"./scripts/commands/help.lua"
-    }
+  "help": {
+    "src": "commands/help.lua"
+  }
 }

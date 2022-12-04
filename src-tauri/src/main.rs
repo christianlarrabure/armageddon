@@ -5,8 +5,9 @@
 
 use std::sync::Arc;
 
-use tauri::Manager;
 use tokio::sync::Mutex;
+
+use tauri::Manager;
 
 use telnet::server::ArmageddonServer;
 
